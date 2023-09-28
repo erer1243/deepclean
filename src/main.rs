@@ -1,7 +1,7 @@
 use regex::Regex;
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, stderr, stdout, Write},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::{exit, Command, ExitStatus},
@@ -40,11 +40,26 @@ fn main() {
         .files_exist(["Cargo.toml"])
         .dirs_exist(["target"])
         .clean_commands(["cargo clean"]);
+
     let makefile_clean_proj = Pattern::new("Makefile with clean target")
         .files_exist(["Makefile|makefile"])
         .check_commands(["make clean --dry-run"])
         .clean_commands(["make clean"]);
-    let pats = [rust_proj, makefile_clean_proj];
+
+    let has_pycache = Pattern::new("contains __pycache__/")
+        .dirs_exist(["__pycache__"])
+        .clean_commands(["rm -r __pycache__"]);
+
+    let has_compiled_pyth = Pattern::new("contains compiled python")
+        .files_exist([r".*\.py[co]"])
+        .clean_commands(["rm *.pyc *.pyo"]);
+
+    let pats = [
+        rust_proj,
+        makefile_clean_proj,
+        has_pycache,
+        has_compiled_pyth,
+    ];
 
     let mut non_flag_args = args.iter().skip(1).filter(|s| !s.starts_with('-'));
     let (Some(root_dir), None) = (non_flag_args.next(), non_flag_args.next()) else {
@@ -66,19 +81,33 @@ fn main() {
 
     // UNWRAP: Since fs::metadata succeeded earlier, this should succeed
     let root_dir = fs::canonicalize(root_dir).unwrap();
-    let mut stk: Vec<PathBuf> = vec![root_dir.clone()];
 
+    macro_rules! print_subdir {
+        ($stream_func:expr, $path:expr) => {{
+            let short = match $path.strip_prefix(&root_dir) {
+                Ok(p) if p.as_os_str().is_empty() => root_dir.as_ref(),
+                Ok(p) => p,
+                Err(_) => &$path,
+            };
+            let mut stream = $stream_func();
+            // UNWRAP: These unwraps match std print macro behavior
+            stream.write(short.as_os_str().as_bytes()).unwrap();
+            stream.flush().unwrap();
+        }};
+    }
+
+    let mut stk: Vec<PathBuf> = vec![root_dir.clone()];
     while let Some(dir) = stk.pop() {
         for pat in &pats {
             match pat.match_dir(&dir) {
                 Ok(false) => continue,
                 Ok(true) => {
-                    print_path_relative_to(&dir, &root_dir);
-                    eprintln!(" matched '{}'", pat.name);
+                    print_subdir!(stdout, dir);
+                    println!(" matched '{}'", pat.name);
                 }
                 Err(e) => {
                     eprint!("Matching '{}' on `", pat.name);
-                    print_path_relative_to(&dir, &root_dir);
+                    print_subdir!(stderr, dir);
                     eprintln!("`: {e}");
                     break;
                 }
@@ -95,33 +124,20 @@ fn main() {
             };
 
             eprint!("Clean commands for '{}' in `", pat.name);
-            print_path_relative_to(&dir, &root_dir);
+            print_subdir!(stderr, dir);
             eprintln!("`: {err_msg}");
         }
 
-        // UNWRAP: This will likely work because match_dir would have just checked this,
+        // UNWRAP: These unwraps will likely work because match_dir would have just checked this,
         // but this should be handled (TODO)
         for f in fs::read_dir(&dir).unwrap() {
-            // UNWRAP: Same as above
             let f = f.unwrap();
-            // UNWRAP: Same as above
             let ty = f.file_type().unwrap();
 
             if ty.is_dir() {
                 stk.push(f.path());
             }
         }
-    }
-
-    fn print_path_relative_to(path: impl AsRef<Path>, root: impl AsRef<Path>) {
-        let shortened_path = match path.as_ref().strip_prefix(&root) {
-            Ok(p) if p.as_os_str().is_empty() => root.as_ref(),
-            Ok(p) => p,
-            Err(_) => path.as_ref(),
-        };
-        let bytes = shortened_path.as_os_str().as_bytes();
-        // UNWRAP: This unwrap matches standard print macro behavior
-        io::stderr().write(bytes).unwrap();
     }
 }
 
