@@ -9,7 +9,7 @@ use std::{
 
 fn usage() -> ! {
     // UNWRAP: If this fails, there is no executable name. Something would be terribly off.
-    let exec_name = std::env::args().nth(0).unwrap();
+    let exec_name = std::env::args().next().unwrap();
     indoc::eprintdoc! {"
         Usage: {exec_name} [OPTIONS] DIR
           -n, --dry-run   Skip running cleanup commands in matched directories.
@@ -91,7 +91,7 @@ fn main() {
             };
             let mut stream = $stream_func();
             // UNWRAP: These unwraps match std print macro behavior
-            stream.write(short.as_os_str().as_bytes()).unwrap();
+            stream.write_all(short.as_os_str().as_bytes()).unwrap();
             stream.flush().unwrap();
         }};
     }
