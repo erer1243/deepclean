@@ -36,7 +36,7 @@ fn main() {
         }
     }
 
-    let rust_proj = Pattern::new("Rust project")
+    let rust_proj = Pattern::new("built Rust project")
         .files_exist(["Cargo.toml"])
         .dirs_exist(["target"])
         .clean_commands(["cargo clean"]);
@@ -97,6 +97,19 @@ fn main() {
             eprint!("Clean commands for '{}' in `", pat.name);
             print_path_relative_to(&dir, &root_dir);
             eprintln!("`: {err_msg}");
+        }
+
+        // UNWRAP: This will likely work because match_dir would have just checked this,
+        // but this should be handled (TODO)
+        for f in fs::read_dir(&dir).unwrap() {
+            // UNWRAP: Same as above
+            let f = f.unwrap();
+            // UNWRAP: Same as above
+            let ty = f.file_type().unwrap();
+
+            if ty.is_dir() {
+                stk.push(f.path());
+            }
         }
     }
 
