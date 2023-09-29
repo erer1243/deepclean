@@ -4,7 +4,7 @@ use std::{
     io::{self, stderr, stdout, Write},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    process::{exit, Command, ExitStatus},
+    process::{exit, Command, ExitStatus, Stdio},
 };
 
 fn usage() -> ! {
@@ -13,8 +13,9 @@ fn usage() -> ! {
     indoc::eprintdoc! {"
         Usage: {exec_name} [OPTIONS] DIR
           -n, --dry-run   Skip running cleanup commands in matched directories.
-                          This may search directories that would've been cleaned up otherwise,
-                          resulting in different matches than normal.
+                            This may search directories that would've been cleaned up otherwise,
+                            resulting in different matches than normal.
+          -v, --verbose   Print shell commands being run and their outputs.
           -h, --help      Show this message
     "};
     exit(1)
@@ -28,10 +29,12 @@ fn main() {
     }
 
     let mut dry_run = false;
+    let mut verbose = false;
 
     for arg in args.iter().filter(|s| s.starts_with('-')) {
         match arg.as_str() {
             "-n" | "--dry-run" => dry_run = true,
+            "-v" | "--verbose" => verbose = true,
             _ => usage(),
         }
     }
@@ -96,12 +99,16 @@ fn main() {
         }};
     }
 
+    let mut n_matched = 0;
+    let mut n_cleaned = 0;
     let mut stk: Vec<PathBuf> = vec![root_dir.clone()];
     while let Some(dir) = stk.pop() {
         for pat in &pats {
-            match pat.match_dir(&dir) {
+            // Check dir for pattern match
+            match pat.match_dir(&dir, verbose) {
                 Ok(false) => continue,
                 Ok(true) => {
+                    n_matched += 1;
                     print_subdir!(stdout, dir);
                     println!(" matched '{}'", pat.name);
                 }
@@ -117,8 +124,23 @@ fn main() {
                 continue;
             }
 
-            let err_msg = match pat.clean_dir(&dir) {
-                Ok(true) => continue,
+            if !verbose {
+                print!("* Cleaning\r");
+                // UNWRAP: TODO handle
+                io::stdout().flush().unwrap();
+            }
+
+            // Run the clean commands
+            let err_msg = match pat.clean_dir(&dir, verbose) {
+                Ok(true) => {
+                    n_cleaned += 1;
+                    if !verbose {
+                        print!("= Cleaned \r");
+                        // UNWRAP: TODO handle
+                        io::stdout().flush().unwrap();
+                    }
+                    continue;
+                }
                 Ok(false) => "Exit status was non-zero".to_string(),
                 Err(e) => e.to_string(),
             };
@@ -139,6 +161,8 @@ fn main() {
             }
         }
     }
+
+    println!("Cleaned {n_cleaned}/{n_matched} matches");
 }
 
 #[derive(Default, Clone)]
@@ -158,7 +182,7 @@ impl Pattern {
         }
     }
 
-    fn match_dir(&self, d: &Path) -> io::Result<bool> {
+    fn match_dir(&self, d: &Path, verbose: bool) -> io::Result<bool> {
         debug_assert!(d.is_absolute(), "match_dir on absolute path");
 
         // Match against files_exist and dirs_exist
@@ -190,7 +214,7 @@ impl Pattern {
 
         // Run check commands
         for c in self.check_commands.iter() {
-            if !run_command_in_dir(c, d)?.success() {
+            if !run_command(c, d, verbose)?.success() {
                 return Ok(false);
             }
         }
@@ -198,12 +222,12 @@ impl Pattern {
         Ok(true)
     }
 
-    fn clean_dir(&self, d: &Path) -> io::Result<bool> {
+    fn clean_dir(&self, d: &Path, verbose: bool) -> io::Result<bool> {
         debug_assert!(d.is_absolute(), "clean_dir on absolute path");
 
         // Run clean commands
         for c in self.clean_commands.iter() {
-            if !run_command_in_dir(c, d)?.success() {
+            if !run_command(c, d, verbose)?.success() {
                 return Ok(false);
             }
         }
@@ -212,12 +236,28 @@ impl Pattern {
     }
 }
 
-fn run_command_in_dir(cmd: &str, dir: &Path) -> io::Result<ExitStatus> {
-    Command::new("sh")
-        .args(["-x", "-c"])
-        .arg(cmd)
-        .current_dir(dir)
-        .status()
+fn run_command(cmd: &str, dir: &Path, verbose: bool) -> io::Result<ExitStatus> {
+    let mut c = Command::new("timeout");
+    c.args(["--kill-after=5s", "10s", "sh", "-c", cmd]);
+    c.current_dir(dir);
+
+    if verbose {
+        c.arg("-x");
+    } else {
+        c.stdout(Stdio::null());
+        c.stderr(Stdio::null());
+        c.stdin(Stdio::null());
+    }
+
+    let status = c.status()?;
+    if status.code() == Some(124) {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Command timed out (10s)",
+        ))
+    } else {
+        Ok(status)
+    }
 }
 
 macro_rules! pattern_setters {
