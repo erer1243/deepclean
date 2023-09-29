@@ -238,12 +238,10 @@ impl Pattern {
 
 fn run_command(cmd: &str, dir: &Path, verbose: bool) -> io::Result<ExitStatus> {
     let mut c = Command::new("timeout");
-    c.args(["--kill-after=5s", "10s", "sh", "-c", cmd]);
+    c.args(["--kill-after=5s", "10s", "sh", "-x", "-c", cmd]);
     c.current_dir(dir);
 
-    if verbose {
-        c.arg("-x");
-    } else {
+    if !verbose {
         c.stdout(Stdio::null());
         c.stderr(Stdio::null());
         c.stdin(Stdio::null());
