@@ -68,6 +68,7 @@ fn main() {
         has_compiled_pyth,
         git_repo,
     ];
+    let pat_name_align = pats.iter().map(|p| p.name.len()).max().unwrap();
 
     let mut non_flag_args = args.iter().skip(1).filter(|s| !s.starts_with('-'));
     let (Some(root_dir), None) = (non_flag_args.next(), non_flag_args.next()) else {
@@ -114,8 +115,9 @@ fn main() {
                 Ok(false) => continue,
                 Ok(true) => {
                     n_matched += 1;
+                    print!("* {:pat_name_align$} - ", pat.name);
                     print_subdir!(stdout, dir);
-                    println!(" matched '{}'", pat.name);
+                    println!();
                 }
                 Err(e) => {
                     eprint!("Matching '{}' on `", pat.name);
@@ -131,7 +133,6 @@ fn main() {
 
             if !verbose {
                 print!("* Cleaning\r");
-                // UNWRAP: TODO handle
                 io::stdout().flush().unwrap();
             }
 
@@ -141,7 +142,6 @@ fn main() {
                     n_cleaned += 1;
                     if !verbose {
                         print!("= Cleaned \r");
-                        // UNWRAP: TODO handle
                         io::stdout().flush().unwrap();
                     }
                     continue;
