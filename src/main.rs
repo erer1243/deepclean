@@ -58,7 +58,7 @@ fn main() {
         .clean_commands(["rm *.pyc *.pyo"]);
 
     let git_repo = Pattern::new("git repo")
-        .dirs_exist(["dir"])
+        .dirs_exist([".git"])
         .clean_commands(["git gc --auto"]);
 
     let pats = [
