@@ -57,11 +57,16 @@ fn main() {
         .files_exist([r".*\.py[co]"])
         .clean_commands(["rm *.pyc *.pyo"]);
 
+    let git_repo = Pattern::new("git repo")
+        .dirs_exist(["dir"])
+        .clean_commands(["git gc --auto"]);
+
     let pats = [
         rust_proj,
         makefile_clean_proj,
         has_pycache,
         has_compiled_pyth,
+        git_repo,
     ];
 
     let mut non_flag_args = args.iter().skip(1).filter(|s| !s.starts_with('-'));
