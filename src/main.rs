@@ -59,7 +59,7 @@ fn main() {
 
     let git_repo = Pattern::new("git repo")
         .dirs_exist([".git"])
-        .clean_commands(["git gc --auto"]);
+        .clean_commands(["git gc --aggressive"]);
 
     let pats = [
         rust_proj,
