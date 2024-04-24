@@ -15,6 +15,7 @@ fn usage() -> ! {
           -n, --dry-run   Skip running cleanup commands in matched directories.
                             This may search directories that would've been cleaned up otherwise,
                             resulting in different matches than normal.
+          -l, --list      Only list information about cleanup patterns.
           -v, --verbose   Print shell commands being run and their outputs.
           -h, --help      Show this message
     "};
@@ -30,11 +31,13 @@ fn main() {
 
     let mut dry_run = false;
     let mut verbose = false;
+    let mut list_pats = false;
 
     for arg in args.iter().filter(|s| s.starts_with('-')) {
         match arg.as_str() {
             "-n" | "--dry-run" => dry_run = true,
             "-v" | "--verbose" => verbose = true,
+            "-l" | "--list" => list_pats = true,
             _ => usage(),
         }
     }
@@ -61,13 +64,25 @@ fn main() {
         .dirs_exist([".git"])
         .clean_commands(["git gc --aggressive"]);
 
+    let ninja_clean_proj = Pattern::new("build.ninja with clean target")
+        .files_exist(["build.ninja"])
+        .check_commands(["ninja clean -n"])
+        .clean_commands(["ninja clean"]);
+
     let pats = [
         rust_proj,
         makefile_clean_proj,
         has_pycache,
         has_compiled_pyth,
         git_repo,
+        ninja_clean_proj,
     ];
+
+    if list_pats {
+        println!("{pats:#?}");
+        exit(0);
+    }
+
     let pat_name_align = pats.iter().map(|p| p.name.len()).max().unwrap();
 
     let mut non_flag_args = args.iter().skip(1).filter(|s| !s.starts_with('-'));
@@ -170,7 +185,7 @@ fn main() {
     println!("Cleaned {n_cleaned}/{n_matched} matches");
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 struct Pattern {
     name: Box<str>,
     files_exist: Box<[Regex]>,
